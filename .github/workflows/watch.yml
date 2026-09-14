@@ -82,9 +82,13 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add state/seen.json
           git commit -m "Aktualizace stavu rozpisu ($(date -u '+%Y-%m-%d %H:%M UTC'))"
-          # Mezitím mohl doběhnout jiný commit — zkusíme rebase a push znovu.
+          # state/seen.json je kompletní snímek přegenerovaný při každém běhu —
+          # při souběhu dvou běhů stačí ponechat tu čerstvější verzi, žádný
+          # řádkový merge není potřeba. "-X ours" případný konflikt vyřeší
+          # automaticky ve prospěch právě dokončeného běhu.
           for i in 1 2 3; do
-            git pull --rebase --quiet origin "${GITHUB_REF_NAME}" && git push && exit 0
+            git fetch origin "${GITHUB_REF_NAME}"
+            git merge -X ours --no-edit "origin/${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}" && exit 0
             sleep 5
           done
           echo "::error::Push stavu se nepovedl."
