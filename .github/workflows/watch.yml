@@ -1,25 +1,26 @@
 name: Cinema City watchdog
 
-# Zkontroluje rozpis Cinema City a když přibudou termíny Odyssei v IMAXu,
-# založí issue (GitHub z něj pošle e-mail i push do appky).
+# Checks the Cinema City schedule and, when new showtimes of The Odyssey in
+# IMAX appear, opens an issue (GitHub turns it into an e-mail and an app push).
 #
-# Naplánováno 4× za hodinu, i když cílem je detekce do ~30 minut: GitHub
-# u scheduled workflows běhy pod zátěží houfně zahazuje (naměřeno 1 z 8).
-# Přebývající běhy nic nestojí (veřejné repo) a nic nerozbijí — hlášení se
-# odvíjí od stavu v state/seen.json, ne od času, takže běh navíc jen zjistí,
-# že se nic nezměnilo, a mlčí. Minuty schválně mimo :00 a :30 a rozprostřené,
-# ať netrefí stejnou špičku.
+# Scheduled every 5 minutes even though the goal is detection within ~30
+# minutes: under load GitHub drops scheduled runs in droves (measured: 1 of 8
+# survives). Extra runs cost nothing (public repo) and break nothing — reports
+# are driven by the state in state/seen.json, not by time, so an extra run just
+# finds that nothing changed and stays silent. Minutes are deliberately off :00
+# and :30 and spread out, so they don't hit the same peak.
 on:
   schedule:
     - cron: "2-59/5 * * * *"
   workflow_dispatch:
     inputs:
       force_report:
-        description: "Nahlásit všechny aktuální termíny, i už známé"
+        description: "Report all current showtimes, including already known ones"
         type: boolean
         default: false
 
-# Stav se commituje zpátky do repa — souběžné běhy by si přepsaly commit.
+# State is committed back to the repo — concurrent runs would overwrite each
+# other's commit.
 concurrency:
   group: watchdog
   cancel-in-progress: false
@@ -39,13 +40,17 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Zkontrolovat rozpis
+      - name: Check the schedule
         id: watch
-        # Chceš hlídat jiný film nebo jiný typ sálu? Přepiš tyhle dvě hodnoty
-        # a smaž state/seen.json (jinak se nový výběr porovná se starým stavem).
+        # Want to watch a different film or auditorium type? Change these two
+        # values and delete state/seen.json (otherwise the new selection gets
+        # compared against the old state).
         env:
           FILM_PATTERN: odyss
           AUDITORIUM_PATTERN: imax
+          # Language of film/cinema names from the API. Falls back to cs_CZ
+          # automatically if the API does not serve this one.
+          API_LANG: en_GB
         run: |
           python3 watch.py \
             --state state/seen.json \
@@ -53,43 +58,44 @@ jobs:
             --title title.txt \
             ${{ inputs.force_report && '--force-report' || '' }}
 
-      - name: Založit issue s novými termíny
+      - name: Open an issue with the new showtimes
         if: steps.watch.outputs.has_news == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Přiřazení vlastníkovi je klíčové: GitHub posílá e-mail defaultně jen
-          # u "Participating" notifikací (přiřazení, zmínky). Pouhé "Watching"
-          # repa dává jen web/mobile notifikaci, e-mail je tam vypnutý.
+          # Assigning the owner is the key part: by default GitHub only e-mails
+          # "Participating" notifications (assignments, mentions). Merely
+          # "Watching" a repo gives a web/mobile notification; e-mail is off.
           url=$(gh issue create \
             --title "$(cat title.txt)" \
             --body-file report.md \
             --assignee "${{ github.repository_owner }}")
-          echo "Založeno: $url"
-          # Issue je jen doručovací kanál pro notifikaci — e-mail odejde už při
-          # založení, takže ho rovnou zavíráme a seznam otevřených zůstává
-          # prázdný. Obsah zůstane čitelný mezi zavřenými issues.
+          echo "Created: $url"
+          # The issue is only a delivery channel for the notification — the
+          # e-mail goes out on creation, so we close it right away and the list
+          # of open issues stays empty. The content remains readable under
+          # closed issues.
           gh issue close "$url" --reason completed
 
-      - name: Uložit stav zpátky do repa
+      - name: Save state back to the repo
         run: |
           rm -f report.md title.txt
           if git diff --quiet -- state/seen.json; then
-            echo "Stav beze změny, není co commitovat."
+            echo "State unchanged, nothing to commit."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add state/seen.json
-          git commit -m "Aktualizace stavu rozpisu ($(date -u '+%Y-%m-%d %H:%M UTC'))"
-          # state/seen.json je kompletní snímek přegenerovaný při každém běhu —
-          # při souběhu dvou běhů stačí ponechat tu čerstvější verzi, žádný
-          # řádkový merge není potřeba. "-X ours" případný konflikt vyřeší
-          # automaticky ve prospěch právě dokončeného běhu.
+          git commit -m "Update schedule state ($(date -u '+%Y-%m-%d %H:%M UTC'))"
+          # state/seen.json is a complete snapshot regenerated on every run —
+          # if two runs race, keeping the fresher version is enough, no
+          # line-level merge needed. "-X ours" resolves any conflict
+          # automatically in favour of the run that just finished.
           for i in 1 2 3; do
             git fetch origin "${GITHUB_REF_NAME}"
             git merge -X ours --no-edit "origin/${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}" && exit 0
             sleep 5
           done
-          echo "::error::Push stavu se nepovedl."
+          echo "::error::Pushing the state failed."
           exit 1
