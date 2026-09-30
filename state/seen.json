@@ -1,26 +1,4 @@
 {
- "updated": "2026-09-29T20:57:45",
- "events": {
-  "254067": {
-   "id": "254067",
-   "film": "The Odyssey",
-   "filmLink": "https://www.cinemacity.cz/films/odyssea/7268s2r",
-   "cinema": "Prague Flora, OC FLORA",
-   "cinemaId": "1052",
-   "datetime": "2026-09-30T13:00:00",
-   "auditorium": "IMAX VOLVO",
-   "attrs": [
-    "15-plus",
-    "2d",
-    "70-mm",
-    "drama",
-    "first-subbed-lang-cs",
-    "history",
-    "original-lang-en",
-    "subbed"
-   ],
-   "booking": "https://tickets.cinemacity.cz/order/254067",
-   "soldOut": false
-  }
- }
+ "updated": "2026-09-30T13:28:18",
+ "events": {}
 }
